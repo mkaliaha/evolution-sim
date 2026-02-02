@@ -28,6 +28,10 @@ export class Renderer {
 	showEnergy: boolean = true;
 	showTemperatureZones: boolean = true;
 
+	// Performance: disable glows when entity count is high
+	private readonly GLOW_DISABLE_THRESHOLD = 600;
+	private glowsEnabled: boolean = true;
+
 	constructor(canvas: HTMLCanvasElement) {
 		this.canvas = canvas;
 		const ctx = canvas.getContext('2d');
@@ -125,6 +129,10 @@ export class Renderer {
 	render(world: World): void {
 		const ctx = this.ctx;
 
+		// Performance: disable glows when too many entities
+		const totalEntities = world.creatures.length + world.food.length;
+		this.glowsEnabled = totalEntities < this.GLOW_DISABLE_THRESHOLD;
+
 		// Clear canvas
 		ctx.fillStyle = '#1a1a2e';
 		ctx.fillRect(0, 0, this.width, this.height);
@@ -214,21 +222,23 @@ export class Renderer {
 		for (const food of foods) {
 			if (food.isConsumed) continue;
 
-			// Food glow
-			const gradient = ctx.createRadialGradient(
-				food.position.x,
-				food.position.y,
-				0,
-				food.position.x,
-				food.position.y,
-				food.size * 2
-			);
-			gradient.addColorStop(0, 'rgba(100, 255, 100, 0.3)');
-			gradient.addColorStop(1, 'rgba(100, 255, 100, 0)');
-			ctx.fillStyle = gradient;
-			ctx.beginPath();
-			ctx.arc(food.position.x, food.position.y, food.size * 2, 0, Math.PI * 2);
-			ctx.fill();
+			// Food glow (skip when performance mode active)
+			if (this.glowsEnabled) {
+				const gradient = ctx.createRadialGradient(
+					food.position.x,
+					food.position.y,
+					0,
+					food.position.x,
+					food.position.y,
+					food.size * 2
+				);
+				gradient.addColorStop(0, 'rgba(100, 255, 100, 0.3)');
+				gradient.addColorStop(1, 'rgba(100, 255, 100, 0)');
+				ctx.fillStyle = gradient;
+				ctx.beginPath();
+				ctx.arc(food.position.x, food.position.y, food.size * 2, 0, Math.PI * 2);
+				ctx.fill();
+			}
 
 			// Food body
 			ctx.fillStyle = '#4ade80';
@@ -248,21 +258,23 @@ export class Renderer {
 			const decay = corpse.getDecayProgress(currentTime);
 			const alpha = 0.8 - decay * 0.6; // Fade from 0.8 to 0.2
 
-			// Corpse glow (darker, reddish)
-			const gradient = ctx.createRadialGradient(
-				corpse.position.x,
-				corpse.position.y,
-				0,
-				corpse.position.x,
-				corpse.position.y,
-				corpse.size * 1.5
-			);
-			gradient.addColorStop(0, `rgba(139, 69, 69, ${alpha * 0.4})`);
-			gradient.addColorStop(1, 'rgba(139, 69, 69, 0)');
-			ctx.fillStyle = gradient;
-			ctx.beginPath();
-			ctx.arc(corpse.position.x, corpse.position.y, corpse.size * 1.5, 0, Math.PI * 2);
-			ctx.fill();
+			// Corpse glow (skip when performance mode active)
+			if (this.glowsEnabled) {
+				const gradient = ctx.createRadialGradient(
+					corpse.position.x,
+					corpse.position.y,
+					0,
+					corpse.position.x,
+					corpse.position.y,
+					corpse.size * 1.5
+				);
+				gradient.addColorStop(0, `rgba(139, 69, 69, ${alpha * 0.4})`);
+				gradient.addColorStop(1, 'rgba(139, 69, 69, 0)');
+				ctx.fillStyle = gradient;
+				ctx.beginPath();
+				ctx.arc(corpse.position.x, corpse.position.y, corpse.size * 1.5, 0, Math.PI * 2);
+				ctx.fill();
+			}
 
 			// Corpse body (brownish-red, gets darker as it decays)
 			const red = Math.floor(139 - decay * 50);
@@ -273,16 +285,18 @@ export class Renderer {
 			ctx.arc(corpse.position.x, corpse.position.y, corpse.size, 0, Math.PI * 2);
 			ctx.fill();
 
-			// X mark to indicate it's a corpse
-			ctx.strokeStyle = `rgba(0, 0, 0, ${alpha * 0.5})`;
-			ctx.lineWidth = 1;
-			const xSize = corpse.size * 0.5;
-			ctx.beginPath();
-			ctx.moveTo(corpse.position.x - xSize, corpse.position.y - xSize);
-			ctx.lineTo(corpse.position.x + xSize, corpse.position.y + xSize);
-			ctx.moveTo(corpse.position.x + xSize, corpse.position.y - xSize);
-			ctx.lineTo(corpse.position.x - xSize, corpse.position.y + xSize);
-			ctx.stroke();
+			// X mark to indicate it's a corpse (skip when performance mode active)
+			if (this.glowsEnabled) {
+				ctx.strokeStyle = `rgba(0, 0, 0, ${alpha * 0.5})`;
+				ctx.lineWidth = 1;
+				const xSize = corpse.size * 0.5;
+				ctx.beginPath();
+				ctx.moveTo(corpse.position.x - xSize, corpse.position.y - xSize);
+				ctx.lineTo(corpse.position.x + xSize, corpse.position.y + xSize);
+				ctx.moveTo(corpse.position.x + xSize, corpse.position.y - xSize);
+				ctx.lineTo(corpse.position.x - xSize, corpse.position.y + xSize);
+				ctx.stroke();
+			}
 		}
 	}
 
@@ -306,8 +320,8 @@ export class Renderer {
 				ctx.stroke();
 			}
 
-			// Body glow based on energy
-			if (creature.energyPercent > 0.5) {
+			// Body glow based on energy (skip when performance mode active)
+			if (this.glowsEnabled && creature.energyPercent > 0.5) {
 				const glowSize = size * 1.5;
 				const gradient = ctx.createRadialGradient(x, y, size * 0.5, x, y, glowSize);
 				gradient.addColorStop(0, creature.color.replace('rgb', 'rgba').replace(')', ', 0.3)'));
