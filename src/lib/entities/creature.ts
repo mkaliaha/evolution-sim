@@ -14,7 +14,11 @@ import {
 	prefersAsexual,
 	getReproductionThreshold,
 	getAttackDamage,
-	getMaxOffspringCount
+	getMaxOffspringCount,
+	getRestMetabolismEfficiency,
+	getMovementCost,
+	getHuntingCost,
+	getReproCooldownMultiplier
 } from './genetics';
 import { speciesRegistry } from './species';
 import { magnitude, distance, clampVelocity } from '../utils/math';
@@ -139,36 +143,20 @@ export class Creature {
 		// Age
 		this.age += deltaTime;
 
-		// Energy drain - diet type affects metabolism efficiency
-		// Herbivores: specialized digestive system, most efficient at rest
-		// Carnivores: efficient at rest, burst metabolism for hunting
-		// Omnivores: generalist system, jack of all trades = slightly inefficient
-		let metabolismEfficiency: number;
-		if (this.isHerbivore) {
-			metabolismEfficiency = 0.8; // Best at rest (specialized grazer)
-		} else if (this.isCarnivore) {
-			metabolismEfficiency = 0.85; // Good at rest (feast-and-famine adapted)
-		} else {
-			metabolismEfficiency = 1.0; // Omnivore: average/baseline (generalist penalty)
-		}
+		// Energy drain - uses continuous diet scaling
+		// Specialists (pure herbivore or pure carnivore) are more efficient than generalists
+		const metabolismEfficiency = getRestMetabolismEfficiency(this.traits.dietPreference);
 		this.energy -= this._energyDrain * deltaTime * metabolismEfficiency;
 
-		// Movement energy cost - specialized diets are more efficient at their niche
+		// Movement energy cost - continuous scaling based on diet
 		const speedRatio = magnitude(this.velocity) / this._speed;
-		let movementCost: number;
-		if (this.isCarnivore) {
-			movementCost = 0.3; // Efficient pursuit (evolved for hunting)
-		} else if (this.isHerbivore) {
-			movementCost = 0.35; // Efficient grazing movement
-		} else {
-			movementCost = 0.4; // Omnivore: average (not specialized)
-		}
+		const movementCost = getMovementCost(this.traits.dietPreference);
 		this.energy -= speedRatio * deltaTime * movementCost;
 
 		// Active hunting is energy-intensive (sprinting, chasing)
-		// Failed hunts are costly - this balances carnivore success rate
-		if (this.state === 'hunting' && (this.isCarnivore || this.isOmnivore)) {
-			const huntingCost = this.isCarnivore ? 0.8 : 0.5; // Carnivores sprint harder
+		// Hunting cost scales continuously - pure carnivores sprint hardest
+		if (this.state === 'hunting') {
+			const huntingCost = getHuntingCost(this.traits.dietPreference);
 			this.energy -= deltaTime * huntingCost;
 		}
 
@@ -316,26 +304,27 @@ export class Creature {
 	}
 
 	// Get the reproduction cooldown for this creature
+	// Uses continuous diet scaling for cooldown multiplier
 	private getReproductionCooldown(): number {
-		// Diet-based cooldown multiplier (configurable)
-		let cooldownMultiplier: number = CONFIG.HERBIVORE_REPRO_COOLDOWN_MULT;
-		if (this.isCarnivore) {
-			cooldownMultiplier = CONFIG.CARNIVORE_REPRO_COOLDOWN_MULT;
-		} else if (this.isOmnivore) {
-			cooldownMultiplier = CONFIG.OMNIVORE_REPRO_COOLDOWN_MULT;
-		}
+		// Continuous diet-based cooldown multiplier
+		const cooldownMultiplier = getReproCooldownMultiplier(this.traits.dietPreference);
 
 		// Size affects reproduction speed (r/K selection)
 		const sizeModifier = 0.5 + this.traits.size;
 
-		// Herbivore size affects reproduction (configurable r/K selection)
-		const herbivoreReproModifier = this.isHerbivore
-			? this.traits.size < 0.3
+		// Herbivore-leaning creatures get size-based reproduction modifier
+		// This scales with how herbivorous the creature is
+		const herbivorenessFactor = Math.max(0, 1 - this.traits.dietPreference * 2); // 1 at diet=0, 0 at diet>=0.5
+		let herbivoreReproModifier = 1.0;
+		if (herbivorenessFactor > 0) {
+			const baseModifier = this.traits.size < 0.3
 				? CONFIG.HERBIVORE_TINY_REPRO_MULT
 				: this.traits.size < 0.5
 					? CONFIG.HERBIVORE_SMALL_REPRO_MULT
-					: CONFIG.HERBIVORE_LARGE_REPRO_MULT
-			: 1.0;
+					: CONFIG.HERBIVORE_LARGE_REPRO_MULT;
+			// Scale the modifier effect by how herbivorous the creature is
+			herbivoreReproModifier = 1.0 + (baseModifier - 1.0) * herbivorenessFactor;
+		}
 
 		return CONFIG.REPRODUCTION_COOLDOWN * cooldownMultiplier * sizeModifier * herbivoreReproModifier;
 	}

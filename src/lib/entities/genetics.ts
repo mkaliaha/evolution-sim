@@ -1,5 +1,226 @@
 import { CONFIG, TRAIT_RANGES, type TraitName } from '../simulation/config';
 
+// ============================================
+// CONTINUOUS DIET SCALING HELPERS
+// ============================================
+// These functions provide smooth interpolation of diet-related traits
+// based on dietPreference (0 = pure herbivore, 0.5 = omnivore, 1 = pure carnivore)
+// This allows "mostly meat-eating omnivores" or "hyperspecialized predators"
+
+/**
+ * Interpolate between three values based on diet preference
+ * @param dietPreference 0-1 scale (0=herbivore, 0.5=omnivore, 1=carnivore)
+ * @param herbValue value at dietPreference=0
+ * @param omniValue value at dietPreference=0.5
+ * @param carnValue value at dietPreference=1
+ */
+function interpolateDietValue(
+	dietPreference: number,
+	herbValue: number,
+	omniValue: number,
+	carnValue: number
+): number {
+	if (dietPreference <= 0.5) {
+		// Interpolate between herbivore and omnivore
+		const t = dietPreference / 0.5; // 0 to 1
+		return herbValue + (omniValue - herbValue) * t;
+	} else {
+		// Interpolate between omnivore and carnivore
+		const t = (dietPreference - 0.5) / 0.5; // 0 to 1
+		return omniValue + (carnValue - omniValue) * t;
+	}
+}
+
+/**
+ * Get continuous plant eating efficiency based on diet preference
+ * Herbivores (0): 100% + size bonus
+ * Omnivores (0.5): ~45%
+ * Carnivores (1): 0% (can't eat plants)
+ */
+export function getPlantEfficiency(dietPreference: number, sizeNormalized: number): number {
+	// Base efficiency scales from 100% at herb to 0% at carn
+	const baseEfficiency = interpolateDietValue(
+		dietPreference,
+		CONFIG.HERBIVORE_PLANT_EFFICIENCY, // 1.0
+		CONFIG.OMNIVORE_PLANT_EFFICIENCY, // 0.45
+		0 // carnivores can't eat plants
+	);
+
+	// Size bonus for herbivores (scales down as diet shifts to carnivore)
+	// Pure herbivores get full bonus, omnivores get half, carnivores get none
+	const sizeBonusFactor = interpolateDietValue(dietPreference, 1.0, 0.5, 0);
+	const sizeBonus = sizeNormalized * CONFIG.HERBIVORE_SIZE_PLANT_BONUS * sizeBonusFactor;
+
+	// Size penalty for omnivores (peaks at 0.5 diet, zero at extremes)
+	// This represents the "jack of all trades" inefficiency
+	const omnivoreness = 1 - Math.abs(dietPreference - 0.5) * 2; // 0 at extremes, 1 at 0.5
+	const sizePenalty = sizeNormalized * CONFIG.OMNIVORE_PLANT_SIZE_PENALTY * omnivoreness;
+
+	const efficiency = baseEfficiency + sizeBonus - sizePenalty;
+	return Math.max(0, Math.min(1.5, efficiency)); // Clamp to reasonable range
+}
+
+/**
+ * Get continuous meat eating efficiency based on diet preference
+ * Herbivores (0): 0% (can't eat meat)
+ * Omnivores (0.5): ~15%
+ * Carnivores (1): ~35%
+ */
+export function getMeatEfficiency(dietPreference: number): number {
+	return interpolateDietValue(
+		dietPreference,
+		0, // herbivores can't eat meat
+		CONFIG.OMNIVORE_MEAT_EFFICIENCY, // 0.15
+		CONFIG.CARNIVORE_MEAT_EFFICIENCY // 0.35
+	);
+}
+
+/**
+ * Get continuous speed size penalty based on diet preference
+ * Herbivores (0): high penalty (0.8) - big grazers are slow
+ * Omnivores (0.5): moderate penalty (0.3)
+ * Carnivores (1): no penalty (0.0) - big cats are still fast
+ */
+export function getSpeedSizePenalty(dietPreference: number): number {
+	return interpolateDietValue(
+		dietPreference,
+		CONFIG.HERBIVORE_SPEED_SIZE_PENALTY,
+		CONFIG.OMNIVORE_SPEED_SIZE_PENALTY,
+		CONFIG.CARNIVORE_SPEED_SIZE_PENALTY
+	);
+}
+
+/**
+ * Get continuous lifespan multiplier based on diet preference
+ * Herbivores (0): shorter (0.9x)
+ * Omnivores (0.5): baseline (1.0x)
+ * Carnivores (1): longer (1.5x)
+ */
+export function getLifespanMultiplier(dietPreference: number): number {
+	return interpolateDietValue(
+		dietPreference,
+		CONFIG.HERBIVORE_LIFESPAN_MULT,
+		CONFIG.OMNIVORE_LIFESPAN_MULT,
+		CONFIG.CARNIVORE_LIFESPAN_MULT
+	);
+}
+
+/**
+ * Get continuous reproduction threshold offset based on diet preference
+ * Herbivores (0): can breed at lower energy (-0.1)
+ * Omnivores (0.5): slight offset (+0.05)
+ * Carnivores (1): need more energy (+0.1)
+ */
+export function getReproThresholdOffset(dietPreference: number): number {
+	return interpolateDietValue(
+		dietPreference,
+		CONFIG.HERBIVORE_REPRO_THRESHOLD_OFFSET,
+		CONFIG.OMNIVORE_REPRO_THRESHOLD_OFFSET,
+		CONFIG.CARNIVORE_REPRO_THRESHOLD_OFFSET
+	);
+}
+
+/**
+ * Get continuous reproduction cooldown multiplier based on diet preference
+ * Herbivores (0): faster breeding (1.0x)
+ * Omnivores (0.5): slower (2.5x)
+ * Carnivores (1): slowest (2.5x)
+ */
+export function getReproCooldownMultiplier(dietPreference: number): number {
+	return interpolateDietValue(
+		dietPreference,
+		CONFIG.HERBIVORE_REPRO_COOLDOWN_MULT,
+		CONFIG.OMNIVORE_REPRO_COOLDOWN_MULT,
+		CONFIG.CARNIVORE_REPRO_COOLDOWN_MULT
+	);
+}
+
+/**
+ * Get continuous energy drain multiplier based on diet preference
+ * This is the "generalist penalty" that peaks at omnivore (0.5)
+ * Specialists (pure herb or pure carn) are more efficient
+ */
+export function getEnergyDrainMultiplier(dietPreference: number, sizeNormalized: number): number {
+	// Base multiplier: herbivores and carnivores are efficient, omnivores are not
+	// Using a parabola that peaks at 0.5
+	const omnivoreness = 1 - Math.abs(dietPreference - 0.5) * 2; // 0 at extremes, 1 at 0.5
+	const baseMultiplier = 1 + (CONFIG.OMNIVORE_ENERGY_DRAIN_MULT - 1) * omnivoreness;
+
+	// Big creature penalty - also scales with omnivoreness
+	// Big omnivores are extremely inefficient, big specialists less so
+	let sizePenalty = 1.0;
+
+	// Herbivore big penalty (for size > 0.5)
+	if (dietPreference < 0.5 && sizeNormalized > 0.5) {
+		const herbFactor = 1 - dietPreference * 2; // 1 at diet=0, 0 at diet=0.5
+		sizePenalty += (sizeNormalized - 0.5) * CONFIG.HERBIVORE_BIG_ENERGY_PENALTY * herbFactor;
+	}
+
+	// Omnivore big penalty (for size > 0.4, peaks at diet=0.5)
+	if (sizeNormalized > 0.4) {
+		const omniPenalty = (sizeNormalized - 0.4) * CONFIG.OMNIVORE_BIG_ENERGY_PENALTY * omnivoreness;
+		sizePenalty += omniPenalty;
+	}
+
+	return baseMultiplier * sizePenalty;
+}
+
+/**
+ * Get continuous hunger threshold based on diet preference
+ * Herbivores (0): graze constantly (85%)
+ * Omnivores (0.5): moderate (75%)
+ * Carnivores (1): feast-and-famine, size dependent
+ */
+export function getHungerThreshold(dietPreference: number, sizeNormalized: number): number {
+	// Carnivore threshold is size-dependent
+	const carnThreshold =
+		CONFIG.CARNIVORE_HUNGER_THRESHOLD_BASE - sizeNormalized * CONFIG.CARNIVORE_HUNGER_SIZE_MODIFIER;
+
+	return interpolateDietValue(
+		dietPreference,
+		CONFIG.HERBIVORE_HUNGER_THRESHOLD,
+		CONFIG.OMNIVORE_HUNGER_THRESHOLD,
+		carnThreshold
+	);
+}
+
+/**
+ * Get continuous metabolism efficiency at rest
+ * Herbivores (0): 0.8 (specialized grazer)
+ * Omnivores (0.5): 1.0 (generalist penalty)
+ * Carnivores (1): 0.85 (feast-and-famine adapted)
+ */
+export function getRestMetabolismEfficiency(dietPreference: number): number {
+	return interpolateDietValue(dietPreference, 0.8, 1.0, 0.85);
+}
+
+/**
+ * Get continuous movement cost efficiency
+ * Herbivores (0): 0.35 (efficient grazing)
+ * Omnivores (0.5): 0.4 (generalist)
+ * Carnivores (1): 0.3 (efficient pursuit)
+ */
+export function getMovementCost(dietPreference: number): number {
+	return interpolateDietValue(dietPreference, 0.35, 0.4, 0.3);
+}
+
+/**
+ * Get continuous hunting cost when in hunting state
+ * Herbivores don't hunt, omnivores hunt lightly, carnivores sprint hard
+ */
+export function getHuntingCost(dietPreference: number): number {
+	// Only applies for diet > 0.35 (omnivore/carnivore territory)
+	if (dietPreference < 0.35) return 0;
+
+	// Scale from 0.5 at omnivore to 0.8 at pure carnivore
+	const huntingDiet = (dietPreference - 0.35) / 0.65; // 0 at 0.35, 1 at 1.0
+	return 0.5 + huntingDiet * 0.3;
+}
+
+// ============================================
+// END CONTINUOUS DIET SCALING HELPERS
+// ============================================
+
 // Complete set of creature traits
 export interface Traits {
 	speed: number; // Movement speed multiplier
@@ -220,24 +441,18 @@ export function getCreatureSize(traits: Traits): number {
 }
 
 // Get movement speed based on speed trait, size, and diet
-// Carnivores: configurable size penalty (default: none)
-// Herbivores: configurable size penalty (default: significant)
-// Omnivores: configurable size penalty (default: small)
+// Uses continuous diet scaling - size penalty smoothly interpolates based on dietPreference
 export function getCreatureSpeed(traits: Traits): number {
 	const baseSpeed = CONFIG.CREATURE_BASE_SPEED * (0.5 + traits.speed);
 
-	// Diet-based size modifier (configurable per diet type)
-	let sizeModifier: number;
-	if (traits.dietPreference > 0.65) {
-		// Carnivore
-		sizeModifier = 1.0 - traits.size * CONFIG.CARNIVORE_SPEED_SIZE_PENALTY;
-	} else if (traits.dietPreference < 0.35) {
-		// Herbivore
-		sizeModifier = 1.3 - traits.size * CONFIG.HERBIVORE_SPEED_SIZE_PENALTY;
-	} else {
-		// Omnivore
-		sizeModifier = 1.1 - traits.size * CONFIG.OMNIVORE_SPEED_SIZE_PENALTY;
-	}
+	// Continuous diet-based size penalty
+	const sizePenalty = getSpeedSizePenalty(traits.dietPreference);
+
+	// Base speed modifier also scales with diet (herbivores start slower but get less penalty)
+	// Pure herbivore: 1.3 base, Pure carnivore: 1.0 base, Omnivore: 1.1 base
+	const baseModifier = interpolateDietValue(traits.dietPreference, 1.3, 1.1, 1.0);
+
+	const sizeModifier = baseModifier - traits.size * sizePenalty;
 
 	return baseSpeed * sizeModifier;
 }
@@ -248,6 +463,7 @@ export function getVisionRange(traits: Traits): number {
 }
 
 // Get energy drain rate based on size, metabolism, and diet
+// Uses continuous diet scaling - generalist penalty peaks at omnivore (0.5)
 export function getEnergyDrain(traits: Traits): number {
 	// Bigger = MUCH more drain (square-cube law: volume grows faster than surface area)
 	// size 0 = 0.3x drain, size 1 = 1.8x drain (6x difference)
@@ -255,25 +471,14 @@ export function getEnergyDrain(traits: Traits): number {
 	// Better metabolism = less drain
 	const metabolismModifier = 1.5 - traits.metabolism;
 
-	// Diet-specific energy modifiers (configurable)
-	let dietModifier = 1.0;
-	if (traits.dietPreference < 0.35 && traits.size > 0.5) {
-		// Big herbivore penalty (configurable)
-		dietModifier = 1 + (traits.size - 0.5) * CONFIG.HERBIVORE_BIG_ENERGY_PENALTY;
-	} else if (traits.dietPreference >= 0.35 && traits.dietPreference <= 0.65) {
-		// Omnivore generalist penalty (configurable)
-		// Base penalty for all omnivores + extra penalty for big ones
-		dietModifier = CONFIG.OMNIVORE_ENERGY_DRAIN_MULT;
-		if (traits.size > 0.4) {
-			// Big omnivores are extremely inefficient - generalist metabolism at large scale
-			dietModifier *= 1 + (traits.size - 0.4) * CONFIG.OMNIVORE_BIG_ENERGY_PENALTY;
-		}
-	}
+	// Continuous diet modifier - peaks at omnivore, efficient at extremes
+	const dietModifier = getEnergyDrainMultiplier(traits.dietPreference, traits.size);
 
 	return CONFIG.CREATURE_ENERGY_DRAIN_BASE * sizeModifier * metabolismModifier * dietModifier;
 }
 
 // Get maximum lifespan in seconds
+// Uses continuous diet scaling - smoothly interpolates between diet types
 export function getMaxLifespan(traits: Traits): number {
 	// Base 30-90 seconds based on lifespan trait
 	let baseLifespan = 30 + traits.lifespan * 60;
@@ -283,17 +488,8 @@ export function getMaxLifespan(traits: Traits): number {
 	const sizeModifier = 0.7 + traits.size * 0.6;
 	baseLifespan *= sizeModifier;
 
-	// Diet-based lifespan modifier (configurable)
-	if (traits.dietPreference > 0.65) {
-		// Carnivore
-		baseLifespan *= CONFIG.CARNIVORE_LIFESPAN_MULT;
-	} else if (traits.dietPreference < 0.35) {
-		// Herbivore
-		baseLifespan *= CONFIG.HERBIVORE_LIFESPAN_MULT;
-	} else {
-		// Omnivore
-		baseLifespan *= CONFIG.OMNIVORE_LIFESPAN_MULT;
-	}
+	// Continuous diet-based lifespan modifier
+	baseLifespan *= getLifespanMultiplier(traits.dietPreference);
 
 	return baseLifespan;
 }
@@ -311,21 +507,13 @@ export function prefersAsexual(traits: Traits): boolean {
 }
 
 // Calculate reproduction threshold
+// Uses continuous diet scaling - smoothly interpolates threshold offset
 export function getReproductionThreshold(traits: Traits): number {
 	// Base threshold from trait
 	let threshold = CONFIG.REPRODUCTION_ENERGY_THRESHOLD - traits.reproductionRate * 0.2;
 
-	// Diet-based adjustment (configurable)
-	if (traits.dietPreference > 0.65) {
-		// Carnivore
-		threshold += CONFIG.CARNIVORE_REPRO_THRESHOLD_OFFSET;
-	} else if (traits.dietPreference < 0.35) {
-		// Herbivore
-		threshold += CONFIG.HERBIVORE_REPRO_THRESHOLD_OFFSET;
-	} else {
-		// Omnivore
-		threshold += CONFIG.OMNIVORE_REPRO_THRESHOLD_OFFSET;
-	}
+	// Continuous diet-based threshold adjustment
+	threshold += getReproThresholdOffset(traits.dietPreference);
 
 	return Math.min(0.95, Math.max(0.5, threshold));
 }

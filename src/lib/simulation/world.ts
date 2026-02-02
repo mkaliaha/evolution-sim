@@ -129,8 +129,8 @@ export class World {
 		// Reset species registry
 		speciesRegistry.reset();
 
-		// Spawn all creatures as herbivores with slight variation
-		// Carnivores and omnivores will evolve naturally through:
+		// Spawn all creatures as small herbivores
+		// Size diversity, diet diversity (carnivores/omnivores) all evolve naturally through:
 		// 1. Stress-based mutation (hungry creatures get 5x diet mutation)
 		// 2. Competition pressure (overcrowding pushes some toward hunting)
 		// 3. Natural selection (different niches become viable)
@@ -148,6 +148,9 @@ export class World {
 			}
 			// Ensure initial creatures remain herbivores (diet diversity evolves later)
 			traits.dietPreference = Math.min(traits.dietPreference, 0.34);
+			// Ensure initial creatures are small (size diversity evolves later)
+			// Range: 0.05 to 0.25 (very small to small)
+			traits.size = 0.05 + Math.random() * 0.2;
 
 			const creature = new Creature(x, y, traits);
 

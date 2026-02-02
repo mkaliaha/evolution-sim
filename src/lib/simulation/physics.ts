@@ -4,6 +4,7 @@ import type { Food } from '../entities/food';
 import type { Corpse } from '../entities/corpse';
 import { CONFIG } from './config';
 import { magnitude, clampVelocity } from '../utils/math';
+import { getPlantEfficiency, getMeatEfficiency, getHungerThreshold } from '../entities/genetics';
 
 // Update all creature behaviors
 export function updateCreatureBehaviors(world: World, deltaTime: number, currentTime: number): void {
@@ -48,13 +49,9 @@ export function updateCreatureBehaviors(world: World, deltaTime: number, current
 			}
 		}
 		// Hungry? Seek food
-		// Real ecosystem behavior based on ecological research:
-		// Herbivores: graze constantly (85% threshold) - continuous foraging, specialized
-		// Omnivores: forage frequently (70% threshold) - generalists need to stay fed
-		// Carnivores: size-based threshold (smaller = hunt more often, larger = feast-and-famine)
-		//   - Small carnivores (size 0.3): ~50% threshold - high metabolism, frequent hunting
-		//   - Large carnivores (size 1.0): ~25% threshold - efficient, can fast longer
-		else if (creature.energyPercent < (creature.isHerbivore ? CONFIG.HERBIVORE_HUNGER_THRESHOLD : creature.isCarnivore ? (CONFIG.CARNIVORE_HUNGER_THRESHOLD_BASE - creature.traits.size * CONFIG.CARNIVORE_HUNGER_SIZE_MODIFIER) : CONFIG.OMNIVORE_HUNGER_THRESHOLD)) {
+		// Uses continuous diet scaling for hunger threshold
+		// Herbivores graze constantly, carnivores use feast-and-famine (size dependent)
+		else if (creature.energyPercent < getHungerThreshold(creature.traits.dietPreference, creature.traits.size)) {
 			if (creature.isOmnivore) {
 				// OMNIVORE: Opportunistic feeder (like bears, raccoons, pigs)
 				// Priority: plants > corpses (scavenging) > vulnerable prey
@@ -212,7 +209,10 @@ export function handleCollisions(world: World): void {
 	// Creature-Food collisions
 	for (const creature of world.creatures) {
 		if (!creature.isAlive) continue;
-		if (creature.isCarnivore) continue; // Carnivores don't eat plants
+
+		// Skip if creature can't eat plants (continuous check - very high diet preference)
+		const plantEfficiency = getPlantEfficiency(creature.traits.dietPreference, creature.traits.size);
+		if (plantEfficiency < 0.05) continue; // Too carnivorous to eat plants
 
 		const nearbyFood = world.getFoodNear(creature.position.x, creature.position.y, creature.size + 10);
 		for (const food of nearbyFood) {
@@ -221,24 +221,11 @@ export function handleCollisions(world: World): void {
 				// Bigger creatures take bigger bites
 				let energy = food.consume(creature.size);
 
-				// HERBIVORE SIZE ADVANTAGE for plant eating
-				// Real ecosystems: largest animals are herbivores (elephants, whales, bison)
-				// Big herbivores have larger digestive systems to process plant matter
-				// They extract MORE energy from the same plants
-				if (creature.isHerbivore) {
-					// size 0.3 = 90% efficiency, size 0.7 = 110%, size 1.0 = 125%
-					const sizeBonus = CONFIG.HERBIVORE_PLANT_EFFICIENCY + creature.traits.size * CONFIG.HERBIVORE_SIZE_PLANT_BONUS;
-					energy *= sizeBonus;
-				}
-
-				// Generalist penalty: omnivores are MUCH less efficient at digesting plants
-				// Herbivores have specialized digestive systems (100% efficiency)
-				// Omnivores have generalist systems - poor plant digestion
-				if (creature.isOmnivore) {
-					// Base 55% efficiency, gets worse with size (down to 40%)
-					const omnivorePenalty = CONFIG.OMNIVORE_PLANT_EFFICIENCY - creature.traits.size * CONFIG.OMNIVORE_PLANT_SIZE_PENALTY;
-					energy *= Math.max(CONFIG.OMNIVORE_PLANT_EFFICIENCY_MIN, omnivorePenalty);
-				}
+				// Apply continuous plant efficiency based on diet preference
+				// Pure herbivores: 100% + size bonus
+				// Omnivores: ~45% with size penalty
+				// Pure carnivores: ~0% (can't digest plants)
+				energy *= plantEfficiency;
 
 				// Food competition: when many herbivores nearby, food is contested
 				// This represents competition for grazing area
@@ -265,7 +252,10 @@ export function handleCollisions(world: World): void {
 	// Creature-Corpse collisions (scavenging)
 	for (const creature of world.creatures) {
 		if (!creature.isAlive) continue;
-		if (!creature.isCarnivore && !creature.isOmnivore) continue; // Only meat-eaters scavenge
+
+		// Skip if creature can't eat meat (continuous check - very low diet preference)
+		const meatEfficiency = getMeatEfficiency(creature.traits.dietPreference);
+		if (meatEfficiency < 0.05) continue; // Too herbivorous to scavenge
 
 		const nearbyCorpses = world.getCorpsesNear(creature.position.x, creature.position.y, creature.size + 10);
 		for (const corpse of nearbyCorpses) {
@@ -274,12 +264,12 @@ export function handleCollisions(world: World): void {
 				// Scavenge from the corpse
 				let energy = corpse.consume(creature.size);
 
-				// Carnivores are more efficient at extracting meat (specialized digestive system)
-				// Omnivores get less from scavenging (generalist penalty)
-				const extractionRate = creature.isCarnivore
-					? CONFIG.CARNIVORE_MEAT_EFFICIENCY * 1.2 // 20% bonus for scavenging (no chase energy wasted)
-					: CONFIG.OMNIVORE_MEAT_EFFICIENCY * 1.0; // No bonus - omnivores are generalists, not specialists
-				energy *= extractionRate;
+				// Apply continuous meat efficiency based on diet preference
+				// Pure carnivores get 20% scavenging bonus (no chase energy wasted)
+				// The bonus scales with how carnivorous the creature is
+				const carnivoreness = Math.max(0, (creature.traits.dietPreference - 0.5) * 2); // 0 at 0.5, 1 at 1.0
+				const scavengeBonus = 1.0 + carnivoreness * 0.2; // Up to 1.2x for pure carnivores
+				energy *= meatEfficiency * scavengeBonus;
 
 				creature.eat(energy);
 				break; // Only eat one corpse per frame
@@ -384,9 +374,9 @@ export function handleCollisions(world: World): void {
 					// (thermodynamically correct - you can't sustain on eating each other)
 					// Pack sharing is costly - solo hunting can be more efficient for small prey
 					const shareRatio = 1 / (1 + packHunters * 0.7);
-					// Carnivores: specialized digestive system for meat (35%)
-					// Omnivores: very inefficient at meat (15%) - must rely on plants
-					const extractionRate = creature.isCarnivore ? CONFIG.CARNIVORE_MEAT_EFFICIENCY : CONFIG.OMNIVORE_MEAT_EFFICIENCY;
+					// Continuous meat efficiency based on diet preference
+					// Pure carnivores: ~35%, Pure omnivores: ~15%, Herbivores: ~0%
+					const extractionRate = getMeatEfficiency(creature.traits.dietPreference);
 					// Large predators are LESS efficient at eating (wasted energy chasing)
 					const huntingEfficiency = sizeEfficiency;
 					energyGain = preyEnergyBefore * extractionRate * shareRatio * huntingEfficiency;

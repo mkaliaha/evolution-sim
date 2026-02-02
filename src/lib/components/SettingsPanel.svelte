@@ -161,15 +161,15 @@
 			label: '🌿 Herbivore Balance',
 			fields: [
 				{ key: 'HERBIVORE_LIFESPAN_MULT', label: 'Lifespan Mult', min: 0.5, max: 2, step: 0.1 },
-				{ key: 'HERBIVORE_REPRO_COOLDOWN_MULT', label: 'Repro Cooldown Mult', min: 0.5, max: 3, step: 0.1 },
+				{ key: 'HERBIVORE_REPRO_COOLDOWN_MULT', label: 'Repro Cooldown Mult', min: 0.2, max: 3, step: 0.05 },
 				{
 					key: 'HERBIVORE_REPRO_THRESHOLD_OFFSET',
 					label: 'Repro Threshold Offset',
-					min: -0.2,
+					min: -0.3,
 					max: 0.2,
 					step: 0.02
 				},
-				{ key: 'HERBIVORE_OFFSPRING_BONUS', label: 'Offspring Bonus', min: 0, max: 3, step: 1 },
+				{ key: 'HERBIVORE_OFFSPRING_BONUS', label: 'Offspring Bonus', min: 0, max: 5, step: 1 },
 				{
 					key: 'HERBIVORE_PLANT_EFFICIENCY',
 					label: 'Plant Efficiency',
@@ -205,6 +205,27 @@
 					max: 0.95,
 					step: 0.05,
 					percent: true
+				},
+				{
+					key: 'HERBIVORE_TINY_REPRO_MULT',
+					label: 'Tiny Repro Mult',
+					min: 0.05,
+					max: 1.0,
+					step: 0.05
+				},
+				{
+					key: 'HERBIVORE_SMALL_REPRO_MULT',
+					label: 'Small Repro Mult',
+					min: 0.1,
+					max: 1.5,
+					step: 0.05
+				},
+				{
+					key: 'HERBIVORE_LARGE_REPRO_MULT',
+					label: 'Large Repro Mult',
+					min: 0.3,
+					max: 2.0,
+					step: 0.1
 				}
 			]
 		},

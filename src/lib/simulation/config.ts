@@ -11,9 +11,9 @@ const DEFAULT_CONFIG = {
 	// Population
 	INITIAL_CREATURE_COUNT: 300, // More creatures for viable sexual reproduction
 	MAX_CREATURES: 1500,
-	// Food needs: scaled for larger world
-	INITIAL_FOOD_COUNT: 1800,
-	MAX_FOOD: 3500,
+	// Food - scarce enough to create competition and boom-bust cycles
+	INITIAL_FOOD_COUNT: 1200,
+	MAX_FOOD: 2000,
 
 	// Creature defaults
 	CREATURE_BASE_SPEED: 100, // pixels per second
@@ -29,7 +29,7 @@ const DEFAULT_CONFIG = {
 	// Food
 	FOOD_SIZE: 5,
 	FOOD_ENERGY: 30,
-	FOOD_SPAWN_RATE: 45, // per second base rate (scaled for larger world)
+	FOOD_SPAWN_RATE: 25, // per second base rate - lower to create food competition
 
 	// Predators
 	PREDATOR_BASE_SPEED: 120,
@@ -39,13 +39,13 @@ const DEFAULT_CONFIG = {
 
 	// Reproduction
 	REPRODUCTION_ENERGY_THRESHOLD: 0.8, // 80% of max energy
-	REPRODUCTION_ENERGY_COST: 0.4, // 40% of current energy
-	REPRODUCTION_COOLDOWN: 5, // seconds (simulation time)
+	REPRODUCTION_ENERGY_COST: 0.35, // 35% of current energy (lower cost = more frequent breeding)
+	REPRODUCTION_COOLDOWN: 4, // seconds (simulation time)
 
 	// Sexual reproduction offspring limits (smaller creatures = more offspring)
-	OFFSPRING_MAX_SMALL: 4, // max offspring for smallest creatures (size < 0.3)
-	OFFSPRING_MAX_MEDIUM: 2, // max offspring for medium creatures (size 0.3-0.6)
-	OFFSPRING_MAX_LARGE: 1, // max offspring for largest creatures (size > 0.6)
+	OFFSPRING_MAX_SMALL: 6, // max offspring for smallest creatures (size < 0.3)
+	OFFSPRING_MAX_MEDIUM: 4, // max offspring for medium creatures (size 0.3-0.6)
+	OFFSPRING_MAX_LARGE: 2, // max offspring for largest creatures (size > 0.6)
 
 	// Size threshold for asexual reproduction (larger creatures cannot reproduce asexually)
 	ASEXUAL_SIZE_THRESHOLD: 0.5, // creatures with size > 0.5 cannot reproduce asexually
@@ -89,11 +89,13 @@ const DEFAULT_CONFIG = {
 	// Lifespan multiplier (1.0 = base, <1 = shorter, >1 = longer)
 	HERBIVORE_LIFESPAN_MULT: 0.9,
 	// Reproduction cooldown multiplier (1.0 = base, >1 = slower breeding)
-	HERBIVORE_REPRO_COOLDOWN_MULT: 1.0,
-	// Reproduction energy threshold offset (-0.1 = can breed at lower energy)
-	HERBIVORE_REPRO_THRESHOLD_OFFSET: -0.1,
-	// Bonus offspring for herbivore pairs
-	HERBIVORE_OFFSPRING_BONUS: 1,
+	// Extremely low value = explosive breeding - herbivores breed like rabbits
+	HERBIVORE_REPRO_COOLDOWN_MULT: 0.15,
+	// Reproduction energy threshold offset (-0.3 = can breed at 50% energy)
+	// Very low threshold = breed constantly whenever they have any food
+	HERBIVORE_REPRO_THRESHOLD_OFFSET: -0.3,
+	// Bonus offspring for herbivore pairs (very high = population explosions)
+	HERBIVORE_OFFSPRING_BONUS: 4,
 	// Plant food efficiency (1.0 = 100%)
 	HERBIVORE_PLANT_EFFICIENCY: 1.0,
 	// Size bonus for plant digestion (big herbivores extract more from plants)
@@ -104,10 +106,10 @@ const DEFAULT_CONFIG = {
 	HERBIVORE_BIG_ENERGY_PENALTY: 1.0, // up to 1 + (size-0.5) * this
 	// Hunger threshold (seek food below this energy %)
 	HERBIVORE_HUNGER_THRESHOLD: 0.85,
-	// Size-based reproduction modifier thresholds
-	HERBIVORE_TINY_REPRO_MULT: 0.3, // size < 0.3
-	HERBIVORE_SMALL_REPRO_MULT: 0.5, // size 0.3-0.5
-	HERBIVORE_LARGE_REPRO_MULT: 1.5, // size > 0.5
+	// Size-based reproduction modifier thresholds (lower = faster breeding)
+	HERBIVORE_TINY_REPRO_MULT: 0.1, // size < 0.3 - tiny herbivores breed explosively fast
+	HERBIVORE_SMALL_REPRO_MULT: 0.2, // size 0.3-0.5 - small herbivores still breed very fast
+	HERBIVORE_LARGE_REPRO_MULT: 0.5, // size > 0.5 - even large herbivores breed quickly
 
 	// --- CARNIVORE BALANCE ---
 	// Lifespan multiplier
