@@ -115,6 +115,7 @@
 		},
 		migration: {
 			label: 'Migration',
+			toggleKey: 'MIGRATION_ENABLED' as ConfigKey,
 			fields: [
 				{
 					key: 'MIGRATION_BASE_RATE',
@@ -381,6 +382,13 @@
 		(CONFIG as any)[key] = value;
 	}
 
+	function updateBoolConfig(key: ConfigKey, value: boolean) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(localConfig as any)[key] = value;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(CONFIG as any)[key] = value;
+	}
+
 	function formatValue(value: number, field: FieldDef): string {
 		if (field.percent) {
 			return (value * 100).toFixed(field.precision ?? 1) + '%';
@@ -460,6 +468,28 @@
 				<!-- Category Fields -->
 				{#if expandedCategory === categoryKey}
 					<div class="flex flex-col gap-2 px-2 pb-2">
+						<!-- Toggle switch for categories with toggleKey -->
+						{#if 'toggleKey' in category && category.toggleKey}
+							{@const toggleKey = category.toggleKey as ConfigKey}
+							<div class="flex items-center justify-between rounded bg-gray-700 px-2 py-1.5">
+								<span class="text-xs text-gray-300">Enabled</span>
+								<button
+									onclick={() => updateBoolConfig(toggleKey, !localConfig[toggleKey])}
+									class="relative h-5 w-9 rounded-full transition-colors {localConfig[toggleKey]
+										? 'bg-blue-500'
+										: 'bg-gray-600'}"
+									aria-label="Toggle {category.label}"
+								>
+									<span
+										class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform {localConfig[
+											toggleKey
+										]
+											? 'left-4'
+											: 'left-0.5'}"
+									></span>
+								</button>
+							</div>
+						{/if}
 						{#each category.fields as field}
 							{@const key = field.key as ConfigKey}
 							<div class="flex flex-col gap-0.5">

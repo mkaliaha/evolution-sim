@@ -414,6 +414,9 @@ export class World {
 	// Spawn migrants from other biomes
 	// This simulates species arriving from outside the simulated area
 	spawnMigrants(deltaTime: number): void {
+		// Skip all migration if disabled - test if ecosystem can sustain itself
+		if (!CONFIG.MIGRATION_ENABLED) return;
+
 		const alive = this.creatures.filter((c) => c.isAlive);
 		const foodRatio = this.food.filter((f) => !f.isConsumed).length / CONFIG.MAX_FOOD;
 		const popRatio = alive.length / CONFIG.MAX_CREATURES;

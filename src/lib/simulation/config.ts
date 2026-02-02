@@ -69,6 +69,7 @@ const DEFAULT_CONFIG = {
 	TEMP_ZONE_MAX_RADIUS: 150,
 
 	// Migration (immigration from other biomes) - kept low to prevent population spikes
+	MIGRATION_ENABLED: true, // set to false to test if ecosystem can sustain itself
 	MIGRATION_BASE_RATE: 0.01, // base migrations per second (1 every ~100 seconds)
 	MIGRATION_FOOD_THRESHOLD: 0.8, // food abundance must be above this (stricter)
 	MIGRATION_POP_THRESHOLD: 0.3, // population must be below this % of max (stricter)
